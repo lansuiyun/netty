@@ -76,7 +76,7 @@ public final class EpollSocketChannel extends AbstractEpollChannel implements So
     }
 
     public EpollSocketChannel() {
-        super(Native.EPOLLIN);
+        super(Native.socketStreamFd(), Native.EPOLLIN);
         config = new EpollSocketChannelConfig(this);
     }
 

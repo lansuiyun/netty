@@ -544,6 +544,16 @@ JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_writeAddress(JNIEnv * 
     return write0(env, clazz, fd, (void *) address, pos, limit);
 }
 
+JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_sendTo(JNIEnv * env, jclass clazz, jint fd, jobject jbuffer, jint pos, jint limit, jbyteArray address, jint scopeId, jint port) {
+    // TODO: Implement me
+    return -1;
+}
+
+JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_sendToAddress(JNIEnv * env, jclass clazz, jint fd, jlong memoryAddress, jint pos, jint limit ,jbyteArray address, jint scopeId, jint port) {
+    // TODO: Implement me
+    return -1;
+}
+
 void incrementPosition(JNIEnv * env, jobject bufObj, int written) {
     // Get the current position using the (*env)->GetIntField if possible and fallback
     // to slower (*env)->CallIntMethod(...) if needed
@@ -714,9 +724,9 @@ JNIEXPORT void JNICALL Java_io_netty_channel_epoll_Native_shutdown(JNIEnv * env,
     }
 }
 
-JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_socket(JNIEnv * env, jclass clazz) {
+jint socket0(JNIEnv * env, jclass clazz, int type) {
     // TODO: Maybe also respect -Djava.net.preferIPv4Stack=true
-    int fd = socket(socketType, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    int fd = socket(socketType, type | SOCK_NONBLOCK, 0);
     if (fd == -1) {
         int err = errno;
         throwIOException(env, exceptionMessage("Error creating socket: ", err));
@@ -731,6 +741,14 @@ JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_socket(JNIEnv * env, j
         }
     }
     return fd;
+}
+
+JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_socketDgram(JNIEnv * env, jclass clazz) {
+    return socket0(env, clazz, SOCK_DGRAM);
+}
+
+JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_socketStream(JNIEnv * env, jclass clazz) {
+    return socket0(env, clazz, SOCK_STREAM);
 }
 
 JNIEXPORT void JNICALL Java_io_netty_channel_epoll_Native_bind(JNIEnv * env, jclass clazz, jint fd, jbyteArray address, jint scopeId, jint port) {

@@ -16,6 +16,7 @@
 package io.netty.channel.epoll;
 
 
+import io.netty.channel.ChannelException;
 import io.netty.channel.DefaultFileRegion;
 import io.netty.channel.epoll.EpollChannelOutboundBuffer.AddressEntry;
 import io.netty.util.internal.NativeLibraryLoader;
@@ -76,8 +77,61 @@ final class Native {
 
     public static native long sendfile(int dest, DefaultFileRegion src, long offset, long length) throws IOException;
 
+    public static int sendTo(
+            int fd, ByteBuffer buf, int pos, int limit, InetAddress addr, int port) throws IOException {
+        byte[] address;
+        int scopeId;
+        if (addr instanceof Inet6Address) {
+            address = addr.getAddress();
+            scopeId = ((Inet6Address) addr).getScopeId();
+        } else {
+            // convert to ipv4 mapped ipv6 address;
+            scopeId = 0;
+            address = ipv4MappedIpv6Address(addr.getAddress());
+        }
+        return sendTo(fd, buf, pos, limit, address, scopeId, port);
+    }
+
+    private static native int sendTo(
+            int fd, ByteBuffer buf, int pos, int limit, byte[] address, int scopeId, int port) throws IOException;
+
+    public static int sendToAddress(
+            int fd, long memoryAddress, int pos, int limit, InetAddress addr, int port) throws IOException {
+        byte[] address;
+        int scopeId;
+        if (addr instanceof Inet6Address) {
+            address = addr.getAddress();
+            scopeId = ((Inet6Address) addr).getScopeId();
+        } else {
+            // convert to ipv4 mapped ipv6 address;
+            scopeId = 0;
+            address = ipv4MappedIpv6Address(addr.getAddress());
+        }
+        return sendToAddress(fd, memoryAddress, pos, limit, address, scopeId, port);
+    }
+
+    private static native int sendToAddress(
+            int fd, long memoryAddress, int pos, int limit, byte[] address, int scopeId, int port) throws IOException;
+
     // socket operations
-    public static native int socket() throws IOException;
+    public static int socketStreamFd() {
+        try {
+            return socketStream();
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    public static int socketDgramFd() {
+        try {
+            return socketDgram();
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+    private static native int socketStream() throws IOException;
+    private static native int socketDgram() throws IOException;
+
     public static void bind(int fd, InetAddress addr, int port) throws IOException {
         byte[] address;
         int scopeId;

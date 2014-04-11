@@ -17,11 +17,9 @@ package io.netty.channel.epoll;
 
 import io.netty.channel.AbstractChannel;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelMetadata;
 import io.netty.channel.EventLoop;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.UnresolvedAddressException;
 
@@ -33,8 +31,8 @@ abstract class AbstractEpollChannel extends AbstractChannel {
     volatile int fd;
     int id;
 
-    AbstractEpollChannel(int flag) {
-        this(null, socketFd(), flag, false);
+    AbstractEpollChannel(int fd, int flag) {
+        this(null, fd, flag, false);
     }
 
     AbstractEpollChannel(Channel parent, int fd, int flag, boolean active) {
@@ -43,14 +41,6 @@ abstract class AbstractEpollChannel extends AbstractChannel {
         readFlag = flag;
         flags |= flag;
         this.active = active;
-    }
-
-    private static int socketFd() {
-        try {
-            return Native.socket();
-        } catch (IOException e) {
-            throw new ChannelException(e);
-        }
     }
 
     @Override
