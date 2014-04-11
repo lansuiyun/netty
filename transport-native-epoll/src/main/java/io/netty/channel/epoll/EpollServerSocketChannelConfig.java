@@ -153,7 +153,7 @@ final class EpollServerSocketChannelConfig extends DefaultChannelConfig
     @Override
     public ServerSocketChannelConfig setAutoRead(boolean autoRead) {
         super.setAutoRead(autoRead);
-        if (!autoRead) {
+        if (!autoRead && channel.eventLoop().inEventLoop()) {
             channel.clearEpollIn();
         }
         return this;

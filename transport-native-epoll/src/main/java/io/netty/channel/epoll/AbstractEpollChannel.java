@@ -20,6 +20,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelMetadata;
 import io.netty.channel.EventLoop;
+import io.netty.util.internal.OneTimeTask;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -113,10 +114,22 @@ abstract class AbstractEpollChannel extends AbstractChannel {
         }
     }
 
-    protected final void clearEpollIn() {
-        if ((flags & readFlag) != 0) {
-            flags &= ~readFlag;
-            ((EpollEventLoop) eventLoop()).modify(this);
+    final void clearEpollIn() {
+        final EventLoop loop = eventLoop();
+        final AbstractEpollUnsafe unsafe = (AbstractEpollUnsafe) unsafe();
+        if (loop.inEventLoop()) {
+            unsafe.clearEpollIn0();
+        } else {
+            // schedule a task to clear the EPOLLIN as it is not safe to motify it directly
+            loop.execute(new OneTimeTask() {
+                @Override
+                public void run() {
+                    if (!config().isAutoRead() && !unsafe.readPending) {
+                        // Still no read triggered so clear it now
+                        unsafe.clearEpollIn0();
+                    }
+                }
+            });
         }
     }
 
@@ -178,6 +191,14 @@ abstract class AbstractEpollChannel extends AbstractChannel {
 
         private boolean isFlushPending() {
             return (flags & Native.EPOLLOUT) != 0;
+        }
+
+
+        protected final void clearEpollIn0() {
+            if ((flags & readFlag) != 0) {
+                flags &= ~readFlag;
+                ((EpollEventLoop) eventLoop()).modify(AbstractEpollChannel.this);
+            }
         }
     }
 }
