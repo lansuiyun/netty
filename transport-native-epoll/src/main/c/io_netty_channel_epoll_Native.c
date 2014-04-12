@@ -554,6 +554,15 @@ JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_sendToAddress(JNIEnv *
     return -1;
 }
 
+JNIEXPORT jobject JNICALL Java_io_netty_channel_epoll_Native_readFrom(JNIEnv * env, jclass clazz, jint fd, jobject jbuffer, jint pos, jint limit) {
+    // TODO: Implement me
+    return NULL;
+}
+
+JNIEXPORT jobject JNICALL Java_io_netty_channel_epoll_Native_readFromAddress(JNIEnv * env, jclass clazz, jint fd, jlong address, jint pos, jint limit) {
+    // TODO: Implement me
+    return NULL;
+}
 void incrementPosition(JNIEnv * env, jobject bufObj, int written) {
     // Get the current position using the (*env)->GetIntField if possible and fallback
     // to slower (*env)->CallIntMethod(...) if needed
