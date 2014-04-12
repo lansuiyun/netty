@@ -102,20 +102,6 @@ public final class EpollSocketChannel extends AbstractEpollChannel implements So
         this.local = Native.localAddress(fd);
     }
 
-    private void setEpollOut() {
-        if ((flags & Native.EPOLLOUT) == 0) {
-            flags |= Native.EPOLLOUT;
-            ((EpollEventLoop) eventLoop()).modify(this);
-        }
-    }
-
-    private void clearEpollOut() {
-        if ((flags & Native.EPOLLOUT) != 0) {
-            flags &= ~Native.EPOLLOUT;
-            ((EpollEventLoop) eventLoop()).modify(this);
-        }
-    }
-
     /**
      * Write bytes form the given {@link ByteBuf} to the underlying {@link java.nio.channels.Channel}.
      * @param buf           the {@link ByteBuf} from which the bytes should be written

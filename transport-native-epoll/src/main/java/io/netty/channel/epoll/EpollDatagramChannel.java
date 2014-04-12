@@ -16,13 +16,17 @@
 package io.netty.channel.epoll;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufHolder;
+import io.netty.channel.AddressedEnvelope;
 import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.socket.DatagramChannelConfig;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.util.internal.StringUtil;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -62,6 +66,71 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
+        for (;;) {
+            Object msg = in.current();
+            if (msg == null) {
+                // Wrote all messages.
+                clearEpollOut();
+                break;
+            }
+
+            boolean done = false;
+            for (int i = config().getWriteSpinCount() - 1; i >= 0; i--) {
+                if (doWriteMessage(msg, in)) {
+                    done = true;
+                    break;
+                }
+            }
+
+            if (done) {
+                in.remove();
+            } else {
+                // Did not write all messages.
+                setEpollOut();
+                break;
+            }
+        }
+    }
+
+    private boolean doWriteMessage(Object msg, ChannelOutboundBuffer in) throws IOException {
+        final Object m;
+        final InetSocketAddress remoteAddress;
+        ByteBuf data;
+        if (msg instanceof AddressedEnvelope) {
+            @SuppressWarnings("unchecked")
+            AddressedEnvelope<Object, InetSocketAddress> envelope = (AddressedEnvelope<Object, InetSocketAddress>) msg;
+            remoteAddress = envelope.recipient();
+            m = envelope.content();
+        } else {
+            m = msg;
+            remoteAddress = null;
+        }
+
+        if (m instanceof ByteBufHolder) {
+            data = ((ByteBufHolder) m).content();
+        } else if (m instanceof ByteBuf) {
+            data = (ByteBuf) m;
+        } else {
+            throw new UnsupportedOperationException("unsupported message type: " + StringUtil.simpleClassName(msg));
+        }
+
+        int dataLen = data.readableBytes();
+        if (dataLen == 0) {
+            return true;
+        }
+
+        ByteBuffer  nioData = data.internalNioBuffer(data.readerIndex(), data.readableBytes());
+
+        final int writtenBytes;
+        if (remoteAddress != null) {
+            writtenBytes = Native.sendTo(fd, nioData, nioData.position(), nioData.limit(),
+                    remoteAddress.getAddress(), remoteAddress.getPort());
+        } else {
+            // TODO: FIX ME writtenBytes = javaChannel().write(nioData);
+            writtenBytes = 0;
+        }
+
+        return writtenBytes > 0;
     }
 
     @Override
@@ -73,7 +142,7 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
         private RecvByteBufAllocator.Handle allocHandle;
         @Override
         public void connect(SocketAddress socketAddress, SocketAddress socketAddress2, ChannelPromise channelPromise) {
-            // Connect not supported by ServerChannel implementations
+            // TODO: Fix me
             channelPromise.setFailure(new UnsupportedOperationException());
         }
 

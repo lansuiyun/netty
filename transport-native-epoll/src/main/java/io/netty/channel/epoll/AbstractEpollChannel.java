@@ -110,6 +110,20 @@ abstract class AbstractEpollChannel extends AbstractChannel {
         }
     }
 
+    protected final void setEpollOut() {
+        if ((flags & Native.EPOLLOUT) == 0) {
+            flags |= Native.EPOLLOUT;
+            ((EpollEventLoop) eventLoop()).modify(this);
+        }
+    }
+
+    protected final void clearEpollOut() {
+        if ((flags & Native.EPOLLOUT) != 0) {
+            flags &= ~Native.EPOLLOUT;
+            ((EpollEventLoop) eventLoop()).modify(this);
+        }
+    }
+
     @Override
     protected void doRegister() throws Exception {
         EpollEventLoop loop = (EpollEventLoop) eventLoop();
