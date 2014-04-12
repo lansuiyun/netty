@@ -113,6 +113,8 @@ final class Native {
     private static native int sendToAddress(
             int fd, long memoryAddress, int pos, int limit, byte[] address, int scopeId, int port) throws IOException;
 
+    public static native InetSocketAddress readFrom(int fd, ByteBuffer buf, int pos, int limit) throws IOException;
+
     // socket operations
     public static int socketStreamFd() {
         try {
