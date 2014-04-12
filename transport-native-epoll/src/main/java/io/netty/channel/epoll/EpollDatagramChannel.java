@@ -15,14 +15,18 @@
  */
 package io.netty.channel.epoll;
 
-import io.netty.channel.ChannelConfig;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
+import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.socket.DatagramChannelConfig;
+import io.netty.channel.socket.DatagramPacket;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 
 public final class EpollDatagramChannel extends AbstractEpollChannel {
     private volatile InetSocketAddress local;
@@ -38,12 +42,12 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
     }
 
     @Override
-    protected SocketAddress localAddress0() {
+    protected InetSocketAddress localAddress0() {
         return local;
     }
 
     @Override
-    protected SocketAddress remoteAddress0() {
+    protected InetSocketAddress remoteAddress0() {
         return null;
     }
 
@@ -61,12 +65,12 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
     }
 
     @Override
-    public ChannelConfig config() {
+    public EpollDatagramChannelConfig config() {
         return config;
     }
 
     final class EpollDatagramChannelUnsafe extends AbstractEpollUnsafe {
-
+        private RecvByteBufAllocator.Handle allocHandle;
         @Override
         public void connect(SocketAddress socketAddress, SocketAddress socketAddress2, ChannelPromise channelPromise) {
             // Connect not supported by ServerChannel implementations
@@ -75,24 +79,43 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
 
         @Override
         void epollInReady() {
+            DatagramChannelConfig config = config();
+            RecvByteBufAllocator.Handle allocHandle = this.allocHandle;
+            if (allocHandle == null) {
+                this.allocHandle = allocHandle = config.getRecvByteBufAllocator().newHandle();
+            }
+
             assert eventLoop().inEventLoop();
             final ChannelPipeline pipeline = pipeline();
             Throwable exception = null;
             try {
                 try {
                     for (;;) {
-                        int socketFd = Native.accept(fd);
-                        if (socketFd == -1) {
-                            // this means everything was handled for now
+                        boolean free = true;
+                        ByteBuf data = allocHandle.allocate(config.getAllocator());
+                        ByteBuffer nioData = data.internalNioBuffer(data.writerIndex(), data.writableBytes());
+                        DatagramSocketAddress remoteAddress = Native.readFrom(
+                                fd, nioData, nioData.position(), nioData.limit());
+                        if (remoteAddress == null) {
                             break;
                         }
+
+                        int readBytes = remoteAddress.receivedAmount;
+                        data.writerIndex(data.writerIndex() + readBytes);
+                        allocHandle.record(readBytes);
                         try {
                             readPending = false;
-                            pipeline.fireChannelRead(null);
+                            pipeline.fireChannelRead(
+                                    new DatagramPacket(data, (InetSocketAddress) localAddress(), remoteAddress));
+                            free = false;
                         } catch (Throwable t) {
                             // keep on reading as we use epoll ET and need to consume everything from the socket
                             pipeline.fireChannelReadComplete();
                             pipeline.fireExceptionCaught(t);
+                        } finally {
+                            if (free) {
+                                data.release();
+                            }
                         }
                     }
                 } catch (Throwable t) {
