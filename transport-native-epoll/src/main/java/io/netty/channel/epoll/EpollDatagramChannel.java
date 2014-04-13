@@ -18,10 +18,12 @@ package io.netty.channel.epoll;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.channel.AddressedEnvelope;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramChannelConfig;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.internal.StringUtil;
@@ -29,15 +31,114 @@ import io.netty.util.internal.StringUtil;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 
-public final class EpollDatagramChannel extends AbstractEpollChannel {
+
+/**
+ * {@link DatagramChannel} implementation that uses linux EPOLL Edge-Triggered Mode for
+ * maximal performance.
+ */
+public final class EpollDatagramChannel extends AbstractEpollChannel implements DatagramChannel {
     private volatile InetSocketAddress local;
     private final EpollDatagramChannelConfig config;
     public EpollDatagramChannel() {
         super(Native.socketDgramFd(), Native.EPOLLIN);
         config = new EpollDatagramChannelConfig(this);
+    }
+
+    @Override
+    public boolean isConnected() {
+        return false;
+    }
+
+    @Override
+    public ChannelFuture joinGroup(InetAddress multicastAddress) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture joinGroup(InetAddress multicastAddress, ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture joinGroup(InetSocketAddress multicastAddress, NetworkInterface networkInterface) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture joinGroup(InetSocketAddress multicastAddress, NetworkInterface networkInterface,
+                                   ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture joinGroup(InetAddress multicastAddress, NetworkInterface networkInterface,
+                                   InetAddress source) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture joinGroup(InetAddress multicastAddress, NetworkInterface networkInterface, InetAddress source,
+                                   ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture leaveGroup(InetAddress multicastAddress) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture leaveGroup(InetAddress multicastAddress, ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture leaveGroup(InetSocketAddress multicastAddress, NetworkInterface networkInterface) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture leaveGroup(InetSocketAddress multicastAddress, NetworkInterface networkInterface,
+                                    ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture leaveGroup(InetAddress multicastAddress, NetworkInterface networkInterface,
+                                    InetAddress source) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture leaveGroup(InetAddress multicastAddress, NetworkInterface networkInterface,
+                                    InetAddress source, ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture block(InetAddress multicastAddress, NetworkInterface networkInterface,
+                               InetAddress sourceToBlock) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture block(InetAddress multicastAddress, NetworkInterface networkInterface,
+                               InetAddress sourceToBlock, ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture block(InetAddress multicastAddress, InetAddress sourceToBlock) {
+        return newFailedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public ChannelFuture block(InetAddress multicastAddress, InetAddress sourceToBlock, ChannelPromise future) {
+        return future.setFailure(new UnsupportedOperationException());
     }
 
     @Override
@@ -76,7 +177,7 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
 
             boolean done = false;
             for (int i = config().getWriteSpinCount() - 1; i >= 0; i--) {
-                if (doWriteMessage(msg, in)) {
+                if (doWriteMessage(msg)) {
                     done = true;
                     break;
                 }
@@ -92,7 +193,7 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
         }
     }
 
-    private boolean doWriteMessage(Object msg, ChannelOutboundBuffer in) throws IOException {
+    private boolean doWriteMessage(Object msg) throws IOException {
         final Object m;
         final InetSocketAddress remoteAddress;
         ByteBuf data;
@@ -119,17 +220,26 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
             return true;
         }
 
-        ByteBuffer  nioData = data.internalNioBuffer(data.readerIndex(), data.readableBytes());
-
         final int writtenBytes;
-        if (remoteAddress != null) {
-            writtenBytes = Native.sendTo(fd, nioData, nioData.position(), nioData.limit(),
-                    remoteAddress.getAddress(), remoteAddress.getPort());
-        } else {
-            // TODO: FIX ME writtenBytes = javaChannel().write(nioData);
-            writtenBytes = 0;
+        if (data.hasMemoryAddress()) {
+            long memoryAddress = data.memoryAddress();
+            if (remoteAddress != null) {
+                writtenBytes = Native.sendToAddress(fd, memoryAddress, data.readerIndex(), data.writerIndex(),
+                        remoteAddress.getAddress(), remoteAddress.getPort());
+            } else {
+                // TODO: Implement me
+                throw new UnsupportedOperationException();
+            }
+        } else  {
+            ByteBuffer nioData = data.internalNioBuffer(data.readerIndex(), data.readableBytes());
+            if (remoteAddress != null) {
+                writtenBytes = Native.sendTo(fd, nioData, nioData.position(), nioData.limit(),
+                        remoteAddress.getAddress(), remoteAddress.getPort());
+            } else {
+                // TODO: FIX ME writtenBytes = javaChannel().write(nioData);
+                throw new UnsupportedOperationException();
+            }
         }
-
         return writtenBytes > 0;
     }
 
@@ -162,9 +272,18 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
                     for (;;) {
                         boolean free = true;
                         ByteBuf data = allocHandle.allocate(config.getAllocator());
-                        ByteBuffer nioData = data.internalNioBuffer(data.writerIndex(), data.writableBytes());
-                        DatagramSocketAddress remoteAddress = Native.readFrom(
-                                fd, nioData, nioData.position(), nioData.limit());
+                        int writerIndex = data.writerIndex();
+                        DatagramSocketAddress remoteAddress;
+                        if (data.hasMemoryAddress()) {
+                            // has a memory address so use optimized call
+                            remoteAddress = Native.recvFromAddress(
+                                    fd, data.memoryAddress(), writerIndex, data.capacity());
+                        } else {
+                            ByteBuffer nioData = data.internalNioBuffer(writerIndex, data.writableBytes());
+                            remoteAddress = Native.recvFrom(
+                                    fd, nioData, nioData.position(), nioData.limit());
+                        }
+
                         if (remoteAddress == null) {
                             break;
                         }
@@ -209,10 +328,15 @@ public final class EpollDatagramChannel extends AbstractEpollChannel {
         }
     }
 
+    /**
+     * Act as special {@link InetSocketAddress} to be able to easily pass all needed data from JNI without the need
+     * to create more objects then needed.
+     */
     static final class DatagramSocketAddress extends InetSocketAddress {
+        // holds the amount of received bytes
         final int receivedAmount;
 
-        DatagramSocketAddress(InetAddress addr, int port, int receivedAmount) {
+        DatagramSocketAddress(String addr, int port, int receivedAmount) {
             super(addr, port);
             this.receivedAmount = receivedAmount;
         }

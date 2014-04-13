@@ -113,10 +113,10 @@ final class Native {
     private static native int sendToAddress(
             int fd, long memoryAddress, int pos, int limit, byte[] address, int scopeId, int port) throws IOException;
 
-    public static native EpollDatagramChannel.DatagramSocketAddress readFrom(
+    public static native EpollDatagramChannel.DatagramSocketAddress recvFrom(
             int fd, ByteBuffer buf, int pos, int limit) throws IOException;
 
-    public static native EpollDatagramChannel.DatagramSocketAddress readFromAddress(
+    public static native EpollDatagramChannel.DatagramSocketAddress recvFromAddress(
             int fd, long memoryAddress, int pos, int limit) throws IOException;
 
     // socket operations
