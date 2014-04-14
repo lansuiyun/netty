@@ -17,7 +17,6 @@ package io.netty.channel.epoll;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
-import io.netty.channel.AddressedEnvelope;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelMetadata;
 import io.netty.channel.ChannelOption;
@@ -36,6 +35,7 @@ import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.NotYetConnectedException;
 
 
 /**
@@ -46,6 +46,8 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
     private static final ChannelMetadata METADATA = new ChannelMetadata(true);
 
     private volatile InetSocketAddress local;
+    private volatile InetSocketAddress remote;
+    private volatile boolean connected;
     private final EpollDatagramChannelConfig config;
     public EpollDatagramChannel() {
         super(Native.socketDgramFd(), Native.EPOLLIN);
@@ -59,13 +61,14 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
 
     @Override
     public boolean isActive() {
-        return fd != -1 && (
-                (config.getOption(ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) && isRegistered()));
+        return fd != -1 &&
+                ((config.getOption(ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) && isRegistered())
+                        || active);
     }
 
     @Override
     public boolean isConnected() {
-        return false;
+        return connected;
     }
 
     @Override
@@ -168,7 +171,7 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
 
     @Override
     protected InetSocketAddress remoteAddress0() {
-        return null;
+        return remote;
     }
 
     @Override
@@ -210,13 +213,13 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
 
     private boolean doWriteMessage(Object msg) throws IOException {
         final Object m;
-        final InetSocketAddress remoteAddress;
+        InetSocketAddress remoteAddress;
         ByteBuf data;
-        if (msg instanceof AddressedEnvelope) {
+        if (msg instanceof DatagramPacket) {
             @SuppressWarnings("unchecked")
-            AddressedEnvelope<Object, InetSocketAddress> envelope = (AddressedEnvelope<Object, InetSocketAddress>) msg;
-            remoteAddress = envelope.recipient();
-            m = envelope.content();
+            DatagramPacket packet = (DatagramPacket) msg;
+            remoteAddress = packet.recipient();
+            m = packet.content();
         } else {
             m = msg;
             remoteAddress = null;
@@ -235,25 +238,22 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
             return true;
         }
 
+        if (remoteAddress == null) {
+            remoteAddress = this.remote;
+            if (remoteAddress == null) {
+                throw new NotYetConnectedException();
+            }
+        }
+
         final int writtenBytes;
         if (data.hasMemoryAddress()) {
             long memoryAddress = data.memoryAddress();
-            if (remoteAddress != null) {
-                writtenBytes = Native.sendToAddress(fd, memoryAddress, data.readerIndex(), data.writerIndex(),
-                        remoteAddress.getAddress(), remoteAddress.getPort());
-            } else {
-                // TODO: Implement me
-                throw new UnsupportedOperationException();
-            }
+            writtenBytes = Native.sendToAddress(fd, memoryAddress, data.readerIndex(), data.writerIndex(),
+                    remoteAddress.getAddress(), remoteAddress.getPort());
         } else  {
             ByteBuffer nioData = data.internalNioBuffer(data.readerIndex(), data.readableBytes());
-            if (remoteAddress != null) {
-                writtenBytes = Native.sendTo(fd, nioData, nioData.position(), nioData.limit(),
-                        remoteAddress.getAddress(), remoteAddress.getPort());
-            } else {
-                // TODO: FIX ME writtenBytes = javaChannel().write(nioData);
-                throw new UnsupportedOperationException();
-            }
+            writtenBytes = Native.sendTo(fd, nioData, nioData.position(), nioData.limit(),
+                    remoteAddress.getAddress(), remoteAddress.getPort());
         }
         return writtenBytes > 0;
     }
@@ -268,12 +268,40 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
         return EpollDatagramChannelOutboundBuffer.newInstance(this);
     }
 
+    @Override
+    protected void doDisconnect() throws Exception {
+        connected = false;
+    }
+
     final class EpollDatagramChannelUnsafe extends AbstractEpollUnsafe {
         private RecvByteBufAllocator.Handle allocHandle;
+
         @Override
-        public void connect(SocketAddress socketAddress, SocketAddress socketAddress2, ChannelPromise channelPromise) {
-            // TODO: Fix me
-            channelPromise.setFailure(new UnsupportedOperationException());
+        public void connect(SocketAddress remote, SocketAddress local, ChannelPromise channelPromise) {
+            boolean success = false;
+            try {
+                try {
+                    InetSocketAddress remoteAddress = (InetSocketAddress) remote;
+                    if (local != null) {
+                        InetSocketAddress localAddress = (InetSocketAddress) local;
+                        doBind(localAddress);
+                    }
+
+                    checkResolvable(remoteAddress);
+                    EpollDatagramChannel.this.remote = remoteAddress;
+                    EpollDatagramChannel.this.local = Native.localAddress(fd);
+                    success = true;
+                } finally {
+                    if (!success) {
+                        doClose();
+                    } else {
+                        channelPromise.setSuccess();
+                        connected = true;
+                    }
+                }
+            } catch (Throwable cause) {
+                channelPromise.setFailure(cause);
+            }
         }
 
         @Override
