@@ -586,13 +586,12 @@ JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_writeAddress(JNIEnv * 
 
 jint sendTo0(JNIEnv * env, jint fd, void* buffer, jint pos, jint limit ,jbyteArray address, jint scopeId, jint port) {
     struct sockaddr_storage addr;
-    socklen_t addrlen = sizeof(addr);
     init_sockaddr(env, address, scopeId, port, &addr);
 
     ssize_t res;
     int err;
     do {
-       res = sendTo(fd, buffer + pos, (size_t) (limit - pos), 0, (struct sockaddr *)&addr, &addrlen);
+       res = sendto(fd, buffer + pos, (size_t) (limit - pos), 0, (struct sockaddr *)&addr, sizeof(struct sockaddr_storage));
        // keep on writing if it was interrupted
     } while(res == -1 && ((err = errno) == EINTR));
 
@@ -605,7 +604,7 @@ jint sendTo0(JNIEnv * env, jint fd, void* buffer, jint pos, jint limit ,jbyteArr
             throwClosedChannelException(env);
             return -1;
         }
-        throwIOException(env, exceptionMessage("Error while sendTo(...): ", err));
+        throwIOException(env, exceptionMessage("Error while sendto(...): ", err));
         return -1;
     }
     return (jint) res;
@@ -622,7 +621,6 @@ JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_sendTo(JNIEnv * env, j
 
 JNIEXPORT jint JNICALL Java_io_netty_channel_epoll_Native_sendToAddress(JNIEnv * env, jclass clazz, jint fd, jlong memoryAddress, jint pos, jint limit ,jbyteArray address, jint scopeId, jint port) {
     return sendTo0(env, fd, (void*) memoryAddress, pos, limit, address, scopeId, port);
-
 }
 
 jobject recvFrom0(JNIEnv * env, jint fd, void* buffer, jint pos, jint limit) {

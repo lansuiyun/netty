@@ -16,17 +16,112 @@
 package io.netty.channel.epoll;
 
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.DefaultChannelConfig;
+import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.channel.MessageSizeEstimator;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.socket.DatagramChannelConfig;
 
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.util.Map;
 
 public final class EpollDatagramChannelConfig extends DefaultChannelConfig implements DatagramChannelConfig {
+    private static final RecvByteBufAllocator DEFAULT_RCVBUF_ALLOCATOR = new FixedRecvByteBufAllocator(2048);
+    private final EpollDatagramChannel datagramChannel;
+    private boolean activeOnOpen;
+
     EpollDatagramChannelConfig(EpollDatagramChannel channel) {
         super(channel);
+        this.datagramChannel = channel;
+        setRecvByteBufAllocator(DEFAULT_RCVBUF_ALLOCATOR);
+    }
+
+    @Override
+    public Map<ChannelOption<?>, Object> getOptions() {
+        return getOptions(
+                super.getOptions(),
+                ChannelOption.SO_BROADCAST, ChannelOption.SO_RCVBUF, ChannelOption.SO_SNDBUF,
+                ChannelOption.SO_REUSEADDR, ChannelOption.IP_MULTICAST_LOOP_DISABLED,
+                ChannelOption.IP_MULTICAST_ADDR, ChannelOption.IP_MULTICAST_IF, ChannelOption.IP_MULTICAST_TTL,
+                ChannelOption.IP_TOS, ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> T getOption(ChannelOption<T> option) {
+        if (option == ChannelOption.SO_BROADCAST) {
+            return (T) Boolean.valueOf(isBroadcast());
+        }
+        if (option == ChannelOption.SO_RCVBUF) {
+            return (T) Integer.valueOf(getReceiveBufferSize());
+        }
+        if (option == ChannelOption.SO_SNDBUF) {
+            return (T) Integer.valueOf(getSendBufferSize());
+        }
+        if (option == ChannelOption.SO_REUSEADDR) {
+            return (T) Boolean.valueOf(isReuseAddress());
+        }
+        if (option == ChannelOption.IP_MULTICAST_LOOP_DISABLED) {
+            return (T) Boolean.valueOf(isLoopbackModeDisabled());
+        }
+        if (option == ChannelOption.IP_MULTICAST_ADDR) {
+            T i = (T) getInterface();
+            return i;
+        }
+        if (option == ChannelOption.IP_MULTICAST_IF) {
+            T i = (T) getNetworkInterface();
+            return i;
+        }
+        if (option == ChannelOption.IP_MULTICAST_TTL) {
+            return (T) Integer.valueOf(getTimeToLive());
+        }
+        if (option == ChannelOption.IP_TOS) {
+            return (T) Integer.valueOf(getTrafficClass());
+        }
+        if (option == ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
+            return (T) Boolean.valueOf(activeOnOpen);
+        }
+        return super.getOption(option);
+    }
+
+    @Override
+    public <T> boolean setOption(ChannelOption<T> option, T value) {
+        validate(option, value);
+
+        if (option == ChannelOption.SO_BROADCAST) {
+            setBroadcast((Boolean) value);
+        } else if (option == ChannelOption.SO_RCVBUF) {
+            setReceiveBufferSize((Integer) value);
+        } else if (option == ChannelOption.SO_SNDBUF) {
+            setSendBufferSize((Integer) value);
+        } else if (option == ChannelOption.SO_REUSEADDR) {
+            setReuseAddress((Boolean) value);
+        } else if (option == ChannelOption.IP_MULTICAST_LOOP_DISABLED) {
+            setLoopbackModeDisabled((Boolean) value);
+        } else if (option == ChannelOption.IP_MULTICAST_ADDR) {
+            setInterface((InetAddress) value);
+        } else if (option == ChannelOption.IP_MULTICAST_IF) {
+            setNetworkInterface((NetworkInterface) value);
+        } else if (option == ChannelOption.IP_MULTICAST_TTL) {
+            setTimeToLive((Integer) value);
+        } else if (option == ChannelOption.IP_TOS) {
+            setTrafficClass((Integer) value);
+        } else if (option == ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
+            setActiveOnOpen((Boolean) value);
+        } else {
+            return super.setOption(option, value);
+        }
+
+        return true;
+    }
+
+    private void setActiveOnOpen(boolean activeOnOpen) {
+        if (channel.isRegistered()) {
+            throw new IllegalStateException("Can only changed before channel was registered");
+        }
+        this.activeOnOpen = activeOnOpen;
     }
 
     @Override
@@ -91,42 +186,46 @@ public final class EpollDatagramChannelConfig extends DefaultChannelConfig imple
 
     @Override
     public int getSendBufferSize() {
-        return 0;
+        return Native.getSendBufferSize(datagramChannel.fd);
     }
 
     @Override
     public EpollDatagramChannelConfig setSendBufferSize(int sendBufferSize) {
-        return null;
+        Native.setSendBufferSize(datagramChannel.fd, sendBufferSize);
+        return this;
     }
 
     @Override
     public int getReceiveBufferSize() {
-        return 0;
+        return Native.getReceiveBufferSize(datagramChannel.fd);
     }
 
     @Override
     public EpollDatagramChannelConfig setReceiveBufferSize(int receiveBufferSize) {
-        return null;
+        Native.setReceiveBufferSize(datagramChannel.fd, receiveBufferSize);
+        return this;
     }
 
     @Override
     public int getTrafficClass() {
-        return 0;
+        return Native.getTrafficClass(datagramChannel.fd);
     }
 
     @Override
     public EpollDatagramChannelConfig setTrafficClass(int trafficClass) {
-        return null;
+        Native.setTrafficClass(datagramChannel.fd, trafficClass);
+        return this;
     }
 
     @Override
     public boolean isReuseAddress() {
-        return false;
+        return Native.isReuseAddress(datagramChannel.fd) == 1;
     }
 
     @Override
     public EpollDatagramChannelConfig setReuseAddress(boolean reuseAddress) {
-        return null;
+        Native.setReuseAddress(datagramChannel.fd, reuseAddress ? 1 : 0);
+        return this;
     }
 
     @Override

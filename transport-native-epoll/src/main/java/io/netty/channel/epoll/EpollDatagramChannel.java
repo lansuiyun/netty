@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 The Netty Project
+ * Copyright 2014 The Netty Project
  *
  * The Netty Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -19,6 +19,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.channel.AddressedEnvelope;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelMetadata;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
@@ -41,11 +43,24 @@ import java.nio.ByteBuffer;
  * maximal performance.
  */
 public final class EpollDatagramChannel extends AbstractEpollChannel implements DatagramChannel {
+    private static final ChannelMetadata METADATA = new ChannelMetadata(true);
+
     private volatile InetSocketAddress local;
     private final EpollDatagramChannelConfig config;
     public EpollDatagramChannel() {
         super(Native.socketDgramFd(), Native.EPOLLIN);
         config = new EpollDatagramChannelConfig(this);
+    }
+
+    @Override
+    public ChannelMetadata metadata() {
+        return METADATA;
+    }
+
+    @Override
+    public boolean isActive() {
+        return fd != -1 && (
+                (config.getOption(ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) && isRegistered()));
     }
 
     @Override
@@ -246,6 +261,11 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
     @Override
     public EpollDatagramChannelConfig config() {
         return config;
+    }
+
+    @Override
+    protected ChannelOutboundBuffer newOutboundBuffer() {
+        return EpollDatagramChannelOutboundBuffer.newInstance(this);
     }
 
     final class EpollDatagramChannelUnsafe extends AbstractEpollUnsafe {
